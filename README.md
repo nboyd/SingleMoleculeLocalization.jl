@@ -28,7 +28,7 @@ This models a 16 by 16 image patch with an integrated Gaussian PSF with standard
 
     Because `ForwardModel` uses statically-sized arrays, performance degrades *rapidly* with increasing patch size.
 
-A [`PointSource`] has three
+A `PointSource` has three
 properties: `x` and `y` are the location of the source within an image, while
 `intensity` is the brightness.
 
