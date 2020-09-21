@@ -83,6 +83,9 @@ For larger images we provide the `ImageLocalizer` type:
 localizer = ImageLocalizer(1.5, 1E-1)
 ```
 
+The first argument is again the standard deviation of the gaussian PSF,
+while the second is the minimum drop parameter discussed above.
+
 `ImageLocalizer`'s can comfortably handle large images:
 
 {cell=example}
