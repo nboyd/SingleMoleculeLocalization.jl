@@ -25,6 +25,7 @@ function ImageLocalizer(patch_localizer :: PatchLocalizer{LMO_T, ForwardModel{P1
     @assert P1 == P2
     @assert iseven(P1)
     t_sq = sum(abs2, patch_localizer.model(PointSource(1.0, (P1 -1)/2, (P2 -1)/2)))
+    # t_sq /= 2
     ImageLocalizer(patch_localizer, sqrt(adcg_min_gap*t_sq), adcg_min_gap, adcg_max_iters)
 end
 
@@ -65,6 +66,7 @@ function process_box(img, box, initial_points, localizer :: ImageLocalizer{P1, P
     locs = weights_only(l,model, filtered)
     locs = nonconvex(l,model, locs)
     locs = patch_localizer(l.y, localizer.adcg_max_iters, localizer.adcg_min_gap; sources = locs, max_score = -localizer.prop_min_intensity)
+    #locs = patch_localizer(l.y, localizer.adcg_max_iters, localizer.adcg_min_gap; max_score = -localizer.prop_min_intensity)
 
     # filter for sources away from the edge...
     locs = [p for p in locs if (l_y < p.x < (P1-1)-u_y && l_x < p.y < (P2-1)-u_x)]
@@ -85,7 +87,7 @@ function rough_points(model :: ForwardModel{P_1, P_2}, img, values, min_brightne
             if r_1 < I[1] < size(img, 1) - r_1 && r_2 < I[2] < size(img, 2) - r_2
                 target = SMatrix{P_1-1, P_2-1}(@view img[I[1]-r_1:I[1]+r_1,I[2]-r_2:I[2]+r_2])
                 p_local = float.(SVector(r_1, r_2)) .+ (1.5, 0.5)
-                p, v, flag = _newton_LMO(p_local, -target, model.psf_1, model.psf_2, -F, sqrt(2)/2, 20)
+                p, v, flag = _newton_LMO(p_local, -target, model.psf_1, model.psf_2, -F, 1.0, 20)
                 if flag
                     push!(proposals, Float64.(Tuple(I)) .+ p-p_local .+ (0.5,-0.5))
                 end

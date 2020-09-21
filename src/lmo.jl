@@ -36,6 +36,7 @@ function LMO(grid_p1, grid_p2, s :: ForwardModel{P_1, P_2}) where {P_1, P_2}
         SMatrix{size(grid_2,1),size(grid_2,2)}(grid_2),  SVector{length(grid_p2)}(grid_p2))
 end
 
+#TODO: Stop hardcoding the radius!
 """
     Compute
     argmin_(x,y) ⟨ ψ(x,y), target ⟩
@@ -56,7 +57,7 @@ function (l::LMO)(target)
     I = Tuple(CartesianIndices(grid_scores)[m_i])
     c_1, c_2 = l.positions_1[I[1]], l.positions_2[I[2]]
     # try newton's method to improve the estimate
-    p, v, flag = _newton_LMO(SVector(c_1, c_2), target, l.s.psf_1, l.s.psf_2, score, 2.0, 20)
+    p, v, flag = _newton_LMO(SVector(c_1, c_2), target, l.s.psf_1, l.s.psf_2, score, 1.1, 20)
     if flag
         v, PointSource(1.0, p[1], p[2])
     else
@@ -64,12 +65,11 @@ function (l::LMO)(target)
     end
 end
 
-# TODO: Change radius to l_∞ instead of l_2 ?
 """ Newton's method to find a local minimum of (x,y) ↦ ⟨ ψ(x,y), window ⟩. """
 function _newton_LMO(p :: SVector{2, Float64}, window, s_x :: GaussPSF, s_y :: GaussPSF, min_v, radius, max_iters=10)
     v = Inf
     p_zero = p
-    r_sq = radius*radius
+    #r_sq = radius*radius
     for i in 1:max_iters
         # compute function value, gradient, and hessian
         r_x, d_x, dd_x = derivatives(s_x,p[1])
@@ -82,7 +82,7 @@ function _newton_LMO(p :: SVector{2, Float64}, window, s_x :: GaussPSF, s_y :: G
 
         # check if we've strayed too far..
         d = p-p_zero
-        if i > 1 && (v > min_v || dot(d, d) > r_sq)
+        if i > 1 && (v > min_v || maximum(abs.(d)) > radius)
           return p, v, false
         end
 
