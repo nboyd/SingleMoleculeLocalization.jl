@@ -17,8 +17,6 @@ For square images and an isotropic Gaussian point-spread function a model can be
 {cell=example output=false result=false}
 ```julia
 using SingleMoleculeLocalization
-using Pkg
-Pkg.add("PlotlyJS")
 using PlotlyJS
 use_style!(:seaborn)
 model = ForwardModel(1.5, 16)
@@ -30,8 +28,8 @@ This models a 16 by 16 image patch with an integrated Gaussian PSF with standard
 
     Because `ForwardModel` uses statically-sized arrays, performance degrades *rapidly* with increasing patch size.
 
-A single point source is represented as a [`PointSource`](#), with three
-properties. `x` and `y` are the location of the source within an image, while
+A [`PointSource`] has three
+properties: `x` and `y` are the location of the source within an image, while
 `intensity` is the brightness.
 
 {cell=example output=false result=false}
