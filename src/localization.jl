@@ -49,6 +49,7 @@ function boxes_and_locs(l :: ImageLocalizer{P1, P2}, img) where {P1, P2}
     [r[c[argmin(r_weights[c])]] for c in clusters], img, r_boxes, rough_points, boxes
 end
 
+#TODO: Figure out when, if ever, we should warmstart here
 function process_box(img, box, initial_points, localizer :: ImageLocalizer{P1, P2}, (l_y, u_y, l_x, u_x) = (1.0, 1.0, 1.0, 1.0)) where {P1, P2}
     patch_localizer = localizer.patch_localizer
     model = patch_localizer.model
@@ -63,10 +64,10 @@ function process_box(img, box, initial_points, localizer :: ImageLocalizer{P1, P
 
     l = SquaredLoss(SMatrix{P1-1, P2-1}(@views img[box.lowerleft[1]:box.upperright[1],box.lowerleft[2]:box.upperright[2]]))
 
-    locs = weights_only(l,model, filtered)
-    locs = nonconvex(l,model, locs)
-    locs = patch_localizer(l.y, localizer.adcg_max_iters, localizer.adcg_min_gap; sources = locs, max_score = -localizer.prop_min_intensity)
-    #locs = patch_localizer(l.y, localizer.adcg_max_iters, localizer.adcg_min_gap; max_score = -localizer.prop_min_intensity)
+    # locs = weights_only(l,model, filtered)
+    # locs = nonconvex(l,model, locs)
+    # locs = patch_localizer(l.y, localizer.adcg_max_iters, localizer.adcg_min_gap; sources = locs, max_score = -localizer.prop_min_intensity)
+    locs = patch_localizer(l.y, localizer.adcg_max_iters, localizer.adcg_min_gap; max_score = -localizer.prop_min_intensity)
 
     # filter for sources away from the edge...
     locs = [p for p in locs if (l_y < p.x < (P1-1)-u_y && l_x < p.y < (P2-1)-u_x)]
