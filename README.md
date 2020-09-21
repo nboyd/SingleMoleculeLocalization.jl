@@ -17,6 +17,8 @@ For square images and an isotropic Gaussian point-spread function a model can be
 {cell=example output=false result=false}
 ```julia
 using SingleMoleculeLocalization
+using Pkg
+Pkg.add("PlotlyJS")
 using PlotlyJS
 use_style!(:seaborn)
 model = ForwardModel(1.5, 16)
