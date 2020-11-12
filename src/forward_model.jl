@@ -20,7 +20,6 @@ loc_to_point(l) = SVector{2,Float64}(l.x, l.y)
 
 _pixel_bounds(w, np) = range(0.0, stop = w, length = np+1)
 
-
 ForwardModel(s, np :: Int64) =
     ForwardModel(s, float(np), np)
 

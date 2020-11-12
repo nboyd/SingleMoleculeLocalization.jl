@@ -159,6 +159,10 @@ function bounded_proximal_newton(fgh, x, l, u, iters, ftol_rel, gtol_abs)
     for i in 1:iters
         v,g,H = fgh(x)
 
+        if minimum(eigvals(H)) ≤ 0.0 # Problem is not locally convex. 
+            return x, false
+        end
+
         if sum(abs2, g) ≤ gtol_abs # clipped/projected gradient?
             return x, true
         end

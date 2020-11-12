@@ -55,7 +55,7 @@ properties: `x` and `y` are the coordinates of the source within an image, while
 p = PointSource(1.0, 7.5, 4.7)
 
 # ╔═╡ 970990fe-fc5f-11ea-24ab-43fed51855fc
-md"""constructs a unit-intensity point source at the spatial location (2.5, 3.7).
+md"""constructs a unit-intensity point source at the spatial location ($(p.x), $(p.y)).
 
 We can apply the forward model to a point source to generate a noiseless image:
 """
@@ -162,7 +162,7 @@ end
 # ╟─8263544a-fc60-11ea-3628-531a245e9580
 # ╠═8fcc6cf2-fc60-11ea-3246-7d5cd3c53ab4
 # ╠═96d336b6-fc60-11ea-0340-770f05551bf3
-# ╠═609b3994-fc61-11ea-3074-1dd755edfd54
+# ╟─609b3994-fc61-11ea-3074-1dd755edfd54
 # ╟─af644d32-fc60-11ea-00b2-f17d495f79fe
 # ╟─c7ccc2e8-fc60-11ea-2162-d9e447ed422e
 # ╠═e9a706ec-fc60-11ea-3468-cddc5c9cbcd9
