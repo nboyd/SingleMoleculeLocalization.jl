@@ -1,12 +1,14 @@
 ### The next ~200 lines of code compute the objective value, gradient, and hessian.
 # They are awful, but pretty fast.
-
-#TODO: Cache some of the repeated tensor contractions
-
 struct StaticNCVXObjective{K, S, T}
     m :: S
     l :: T
 end
+
+_vectorize(s :: SVector{K, PointSource}) where {K} = 
+	vcat(getproperty.(s, :intensity), getproperty.(s, :x), getproperty.(s, :y))
+
+_interleave_gradient(gw, gx, gy) = vcat(gw,gx,gy)
 
 # Eval a bunch of utiltiy functions for various numbers of sources (up to MAX_STATIC_K)
 for k in 1:MAX_STATIC_K
@@ -34,87 +36,64 @@ for k in 1:MAX_STATIC_K
 
         quote
             @inline function _diagm(v :: SVector{$k, Float64})
-                    v.*$(SMatrix{k,k,Float64}(I))
+                   v.*$(SMatrix{k,k,Float64}(I))
             end
         end |> eval
 
-        exs = [:(PointSource(x[$((i-1)*3 + 1)],x[$((i-1)*3 + 2)], x[$((i-1)*3 + 3)])) for i in 1:k]
 
+        linearizer = LinearIndices((k, 3))
+        ex_w = [:(x[$(linearizer[i,1])]) for i in 1:k]
+        ex_x = [:(x[$(linearizer[i,2])]) for i in 1:k]
+        ex_y = [:(x[$(linearizer[i,3])]) for i in 1:k]
+  		
         quote
             @inline function _devectorize(x :: SVector{$(3*k)})
-                         $(Expr(:tuple, exs...))
+                         SVector($(ex_w...)),SVector($(ex_x...)), SVector($(ex_y...))
                      end
         end |> eval
 
-
-        ex1 = Expr(:tuple, [:(x[$i][1]) for i in 1:k]...)
-        ex2 = Expr(:tuple, [:(x[$i][2]) for i in 1:k]...)
-        ex3 = Expr(:tuple, [:(x[$i][3]) for i in 1:k]...)
-
+        ex1 = [:(x[$i][1]) for i in 1:k]
+        ex2 = [:(x[$i][2]) for i in 1:k]
+        ex3 = [:(x[$i][3]) for i in 1:k]
+        
         quote
-            @inline function _unpack_derivatives(x :: NTuple{$k})
+            @inline function _unpack_derivatives(x :: SVector{$k})
                 (
-                    $ex1,
-                    $ex2,
-                    $ex3
+                    tuple($(ex1...)),
+                    tuple($(ex2...)),
+                    tuple($(ex3...))
                 )
             end
         end |> eval
-
-        linearizer = LinearIndices((3, k))
-        exs = vcat([[:(gw[$i]),:(gx[$i]),:(gy[$i])] for i in 1:k]...)
-
-        quote
-            @inline function _interleave_gradient(gw :: SVector{$k}, gx, gy)
-                SVector{$(3*k)}($(exs...))
-            end
-        end |> eval
-
-        linearizer = LinearIndices((3, k))
-        pairs = []
-        for i in 1:k
-            for j in 1:k
-                push!(pairs, ((linearizer[1,j],linearizer[1,i]),:(H_ww[$j,$i])))
-                push!(pairs, ((linearizer[2,j],linearizer[2,i]),:(H_xx[$j,$i])))
-                push!(pairs, ((linearizer[3,j],linearizer[3,i]),:(H_yy[$j,$i])))
-
-                push!(pairs, ((linearizer[2,j],linearizer[1,i]),:(H_xw[$j,$i])))
-                push!(pairs, ((linearizer[1,i],linearizer[2,j]),:(H_xw[$j,$i])))
-
-                push!(pairs, ((linearizer[3,j],linearizer[1,i]),:(H_yw[$j,$i])))
-                push!(pairs, ((linearizer[1,i],linearizer[3,j]),:(H_yw[$j,$i])))
-
-                push!(pairs, ((linearizer[2,j],linearizer[3,i]),:(H_xy[$j,$i])))
-                push!(pairs, ((linearizer[3,i],linearizer[2,j]),:(H_xy[$j,$i])))
-            end
-        end
-        pairs = [(LinearIndices((3k, 3k))[i,j], v) for ((i,j), v) in pairs]
-        @assert length(unique(first.(pairs))) == 9*k*k
-        sorted_exs = last.(sort(pairs))
-
-
-        quote
-            @inline function _interleave_hessian(H_ww :: SMatrix{$k,$k},H_xx, H_yy, H_xw, H_yw, H_xy)
-                SMatrix{$(3*k), $(3*k)}($(sorted_exs...))
-            end
-        end |> eval
-
     end
 end
 
+function _f(p :: SingleMoleculeLocalization.StaticNCVXObjective{k}, x_vec :: SVector) where {k}
+    w, sx, sy = _devectorize(x_vec)
+
+    f_x = Tuple((p.m.psf_1).(sx))
+    f_y = Tuple((p.m.psf_2).(sy))
+
+    k_x = _k(f_x)
+    k_y = _k(f_y)
+
+    # function value
+    r = 0.5*sum(w'*(k_x.*k_y)*w)
+    l = -_m_dot(f_x, p.l.y, f_y)
+    r += LinearAlgebra.dot(l,w)
+
+    r + 0.5*sum(abs2, p.l.y)
+end
+
+
+
 function _fg(p :: StaticNCVXObjective{k}, x_vec) where {k}
-    sources = _devectorize(x_vec)
-
-    w = SVector(getproperty.(sources, :intensity))
-    target = p.l.y
-
-    sx = getproperty.(sources,:x)
-    sy = getproperty.(sources,:y)
-
-    d_x = derivatives.((p.m.psf_1,),sx)
-    d_y = derivatives.((p.m.psf_2,),sy)
-
-
+    w, sx, sy = _devectorize(x_vec)
+    
+    # broadcast fails to infer!
+    d_x = map(x->derivatives(p.m.psf_1,x), sx)
+    d_y = map(y->derivatives(p.m.psf_2,y), sy) 
+    
     f_x, dx, ddx = _unpack_derivatives(d_x)
     f_y, dy, ddy = _unpack_derivatives(d_y)
 
@@ -123,35 +102,32 @@ function _fg(p :: StaticNCVXObjective{k}, x_vec) where {k}
 
     # function value
     r = 0.5*sum(w'*(k_x.*k_y)*w)
-    l = -_m_dot(f_x, target, f_y)
+    l = -_m_dot(f_x, p.l.y, f_y)
     r += dot(l,w)
 
     # gradients...
     g_w = l + (k_x.*k_y)*w
-    g_x = (-w).*_m_dot(dx, target, f_y)
+    g_x = (-w).*_m_dot(dx, p.l.y, f_y)
     d_k_x  = _k(dx, f_x)
     g_x += w.*((d_k_x.*k_y)*w)
-    g_y = -w.*(_m_dot(f_x, target, dy))
+    g_y = -w.*(_m_dot(f_x, p.l.y, dy))
     d_k_y = _k(dy, f_y)
     g_y += w.*((d_k_y.*k_x)*w)
-    r + 0.5*sum(abs2, target), _interleave_gradient(g_w, g_x, g_y)
+    r + 0.5*sum(abs2, p.l.y), _interleave_gradient(g_w, g_x, g_y)
 end
 
-function (p :: StaticNCVXObjective{k})(x_vec) where {k}
-    sources = _devectorize(x_vec)
-
-    w = SVector(getproperty.(sources, :intensity))
+function (p :: StaticNCVXObjective{k})(x_vec_dyn) where {k}
+    x_vec = SVector{3k, Float64}(x_vec_dyn)
+    w, sx, sy = _devectorize(x_vec)
     target = p.l.y
 
-    sx = getproperty.(sources,:x)
-    sy = getproperty.(sources,:y)
-
-    d_x = derivatives.((p.m.psf_1,),sx)
-    d_y = derivatives.((p.m.psf_2,),sy)
-
+    # broadcast fails to infer!
+    d_x = map(x->derivatives(p.m.psf_1,x), sx)
+    d_y = map(y->derivatives(p.m.psf_2,y), sy)
 
     f_x, dx, ddx = _unpack_derivatives(d_x)
     f_y, dy, ddy = _unpack_derivatives(d_y)
+
     _ncvx_impl(target, w, f_x, dx, ddx, f_y, dy, ddy)
 end
 
@@ -192,6 +168,6 @@ function _ncvx_impl(target, w :: SVector{k}, f_x, dx, ddx, f_y, dy, ddy) where {
     H_yw = w.*(d_k_y.*k_x)
     H_yw += _diagm((d_k_y.*k_x)*w - _m_dot(f_x, target, dy))
     g = _interleave_gradient(g_w, g_x, g_y)
-    H = _interleave_hessian(H_ww,H_xx, H_yy, H_xw, H_yw, H_xy)
+    H = vcat(hcat(H_ww, H_xw', H_yw'), hcat(H_xw, H_xx, H_xy), hcat(H_yw, H_xy', H_yy))
     r + 0.5*sum(abs2, target), SVector(g), Symmetric(SMatrix(H))
 end

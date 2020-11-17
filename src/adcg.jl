@@ -1,9 +1,8 @@
-
 # If the number of sources is ≤ MAX_STATIC_K
 # call static methods (to evaluate the function value and derivatives).
-# If the number of sources is more than MAX_STATIC_K use dynamic methods
-# and don't bother with the proximal newton method.
-const MAX_STATIC_K = 5
+# If the number of sources is more than MAX_STATIC_K use dynamic methods.
+const MAX_STATIC_K = 15
+const MAX_NEWTON_K = 5
 
 
 """ Wrapper around a small static array representing the loss function
@@ -60,11 +59,10 @@ function (p :: PatchLocalizer)(target :: SMatrix, max_iters :: Int64, min_gap ::
         push!(sources, source)
 
         sources = nonconvex(loss, model, sources)
-
         gap = old_loss - loss(model(sources))
         gap < min_gap && return old_sources
     end
-    @warn "Hit max iters in ADCG."
+    #@warn "Hit max iters in ADCG."
     return sources
 end
 
@@ -81,27 +79,31 @@ function nonconvex(lossfn :: SquaredLoss, s :: ForwardModel{P_1, P_2}, initial_s
     elseif k ≤ MAX_STATIC_K
         _nonconvex_impl(lossfn, s, SVector{k}(initial_sources)) :: Vector{PointSource}
     else
-        _nonconvex_impl(lossfn :: SquaredLoss, s, initial_sources) :: Vector{PointSource}
+        _nonconvex_impl(lossfn, s, initial_sources) :: Vector{PointSource}
     end
 end
 
 function _nonconvex_impl(lossfn :: SquaredLoss, s :: ForwardModel{P_1, P_2}, initial_sources :: SVector{k}) where {k, P_1, P_2}
-        initial_x = reinterpret(Float64, Vector(initial_sources)) |> collect
-        bounds = repeat([(s.min_intensity,s.max_intensity),(0.0,s.widths[1]), (0.0,s.widths[2])], k)
+        initial_x = _vectorize(initial_sources) #reinterpret(Float64, Vector(initial_sources)) |> collect
+        bounds = SVector{3*k}(vcat(fill((s.min_intensity,s.max_intensity), k),fill((0.0,s.widths[1]),k), fill((0.0,s.widths[2]),k) )) #repeat(SVector((s.min_intensity,s.max_intensity),(0.0,s.widths[1]), (0.0,s.widths[2])), k)
+
         initial_x = clamp.(initial_x, first.(bounds), last.(bounds))
 
-        s_init = SVector{3*k}(initial_x)
         fgh = StaticNCVXObjective{k, typeof(s), typeof(lossfn)}(s, lossfn)
 
-        x_prox, flag = bounded_proximal_newton(fgh, s_init, first.(bounds), last.(bounds), 30, 1E-10, 1E-12)
+        flag = false
+        if k ≤ MAX_NEWTON_K
+            s_init = SVector{3*k}(initial_x)
 
-        if !flag
-            opt = Opt(:LD_MMA, length(initial_x))
+            x_prox, flag, msg = bounded_proximal_newton(fgh, s_init, first.(bounds), last.(bounds), 30, 1E-7, 1E-7, x->_f(fgh,x))#1E-10, 1E-12, x->_f(fgh,x))
+        end
+        if !flag #true
+            opt = Opt(:LD_SLSQP, length(initial_x))
             opt.lower_bounds = getindex.(bounds,1)
             opt.upper_bounds = getindex.(bounds,2)
 
             function fg!(x, g_storage)
-                v, g = _fg(fgh, x)
+                v, g = _fg(fgh, SVector{3*k}(x))
                 if length(g_storage) != 0
                     g_storage .= g
                 end
@@ -109,12 +111,16 @@ function _nonconvex_impl(lossfn :: SquaredLoss, s :: ForwardModel{P_1, P_2}, ini
             end
 
             opt.min_objective = fg!
-            opt.ftol_rel = 1E-5
+            opt.ftol_rel = 1E-8
             (minf,x,ret) = NLopt.optimize(opt, initial_x)
 
-            reinterpret(PointSource, x) |> copy
+            w, x, y = _devectorize(SVector{3*k}(x))
+            r = [PointSource(w,x,y) for (w,x,y) in zip(w,x,y)]
+            Vector(r)
         else
-            reinterpret(PointSource, x_prox |> Vector) |> copy
+            w, x, y = _devectorize(x_prox)
+            r = [PointSource(w,x,y) for (w,x,y) in zip(w,x,y)]
+            Vector(r)
         end
 end
 
@@ -126,7 +132,7 @@ function _nonconvex_impl(lossfn :: SquaredLoss, s :: ForwardModel{P_1, P_2}, ini
 
         fg = NCVXObjective(s,lossfn)
 
-        opt = Opt(:LD_MMA, length(initial_x))
+        opt = Opt(:LD_SLSQP, length(initial_x))
         opt.lower_bounds = getindex.(bounds,1)
         opt.upper_bounds = getindex.(bounds,2)
 
@@ -139,9 +145,9 @@ function _nonconvex_impl(lossfn :: SquaredLoss, s :: ForwardModel{P_1, P_2}, ini
         end
 
         opt.min_objective = fg!
-        opt.ftol_rel = 1E-5
+        opt.ftol_rel = 1E-8
+                   
         (minf,x,ret) = NLopt.optimize(opt, initial_x)
-
         reinterpret(PointSource, x) |> copy
 end
 

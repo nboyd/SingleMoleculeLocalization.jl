@@ -1,6 +1,5 @@
 #### Functions for quick minimization of quadratics and general (twice-differentiable)
 # convex functions with bound constraints.
-
 using LinearAlgebra, SparseArrays
 using OSQP
 
@@ -96,7 +95,7 @@ function active_set_min_bound_constrained_quadratic(Q_st :: Quadratic, l, u, max
             comp_slack = true
             for i in eachindex(x)
                 if g[i] < -tol
-                    if abs(x[i] - u[i]) > tol
+                    if abs(x[i] - u[i]) > tol #?
                         comp_slack = false
                         mask_u[i] = false
                         mask_l[i] = false
@@ -142,46 +141,82 @@ function form_quadratic_from_least_squares(A,b)
     Quadratic(A'*A, A'*b)
 end
 
-""" Simple proximal-newton method to solve
+""" Proximal-newton method to solve
 
     min_x f(x)
     s.t. l ≤ x ≤ u
 
     returns (x,f) where f is true if the method succeeded.
 
-    fgh(x) should return (f(x), g, H)
+    fgh(x) should return (f(x), g, H) - H should be a 
     where g and H are the gradient and hessian of f.
 """
-function bounded_proximal_newton(fgh, x, l, u, iters, ftol_rel, gtol_abs)
+function bounded_proximal_newton(fgh, x, l, u, iters, ftol_rel, gtol_abs, f = first ∘ fgh, btls_params = (0.5, 0.8, 20))
     v_old = Inf
     @assert all(l .< u)
     @assert !any(isnan.(x))
     for i in 1:iters
-        v,g,H = fgh(x)
-
-        if minimum(eigvals(H)) ≤ 0.0 # Problem is not locally convex. 
-            return x, false
+        v,g,H_ = fgh(x)
+        H = Symmetric(H_)
+        Λ , U =  eigen(H)
+        psd_flag = all( Λ .≥ 0.0)
+        if any(<(0.0), Λ)
+            # @warn "Not PSD!"
+            Λ = abs.(Λ)
+            H = Symmetric(U*Diagonal(abs.(Λ))*U')
         end
 
-        if sum(abs2, g) ≤ gtol_abs # clipped/projected gradient?
-            return x, true
+        #TODO: Check actual first-order optimality conditions...
+        if sum(abs2, g) ≤ gtol_abs # clipped/projected gradient? does this happen?
+            return x, true, :gtol_abs
         end
 
-        if v > v_old + 1E-10 || any(isnan.(x))
-            return x, false
+        if any(isnan.(x))
+            return x, false, :f_nan
         end
 
-        if (v_old-v)/v < ftol_rel
-            return x, true
+        if psd_flag && (v_old-v)/v < ftol_rel
+            return x, true, :ftol_rel
         end
 
         v_old = v
-        f_hat = Quadratic(H, -g)
-        delta_x, flag = min_bound_constrained_quadratic(f_hat, l-x, u-x)
-        if !flag
-            return x, false
+
+        # check if unconstrained newton is feasible.
+        unconstrained = -(U*((Diagonal(1 ./ Λ))*(U'*g)))
+        delta_x = if all((l-x) .< unconstrained .< (u-x))
+            unconstrained
+        else 
+            #TODO: Warmstart active set to current active set? probably...
+            f_hat = Quadratic(H |> collect, -g |> collect)
+            delta_x_t, flag = active_set_min_bound_constrained_quadratic(f_hat, (l-x) |> collect, (u-x) |> collect)
+            if !flag
+                return x, false, :QP_fail
+            end
+            delta_x = typeof(x)(delta_x_t)
         end
-        x = x + delta_x
+       
+        t, btls_flag, ls_msg = _backtracking_linesearch(f,v,g,x,delta_x,btls_params...)
+        if !btls_flag
+            return x, false, ls_msg
+        end
+        x = x + t*delta_x
     end
-    x, false
+    x, false, :max_iters
+end
+
+
+function _backtracking_linesearch(f,f_0,g_0,x_0,v,α,β,max_iters)
+    gv = dot(g_0, v)
+    t = 1.0
+    for i in 1:max_iters
+        if f(x_0 + t*v) ≤ f_0 + α*t*gv
+            break
+        else
+            t *= β
+            if i == max_iters
+                return 0.0, false, :linesearch_failed
+            end
+        end
+    end
+    t, true, :success
 end
