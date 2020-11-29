@@ -160,7 +160,7 @@ function bounded_proximal_newton(fgh, x, l, u, iters, ftol_rel, gtol_abs, f = fi
         H = Symmetric(H_)
         Λ , U =  eigen(H)
         psd_flag = all( Λ .≥ 0.0)
-        if any(<(0.0), Λ)
+        if !psd_flag
             # @warn "Not PSD!"
             Λ = abs.(Λ)
             H = Symmetric(U*Diagonal(abs.(Λ))*U')
@@ -168,7 +168,11 @@ function bounded_proximal_newton(fgh, x, l, u, iters, ftol_rel, gtol_abs, f = fi
 
         #TODO: Check actual first-order optimality conditions...
         if sum(abs2, g) ≤ gtol_abs # clipped/projected gradient? does this happen?
-            return x, true, :gtol_abs
+            if psd_flag
+                return x, true, :gtol_abs
+            else
+                return x, false, :gtol_abs_ncvx
+            end 
         end
 
         if any(isnan.(x))
