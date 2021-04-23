@@ -179,8 +179,12 @@ function bounded_proximal_newton(fgh, x, l, u, iters, ftol_rel, gtol_abs, f = fi
             return x, false, :f_nan
         end
 
-        if psd_flag && (v_old-v)/v < ftol_rel
-            return x, true, :ftol_rel
+        if (v_old-v)/v < ftol_rel
+            if psd_flag
+                return x, true, :ftol_rel
+            else
+                return x, false, :ftol_rel_ncvx
+            end
         end
 
         v_old = v

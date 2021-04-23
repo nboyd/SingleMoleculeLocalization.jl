@@ -1,6 +1,3 @@
-"""
-    The forward model for a single molecule localization microscopy experiment.
-"""
 struct ForwardModel{P_1, P_2}
     psf_1 :: GaussPSF{P_1}
     psf_2 :: GaussPSF{P_2}
@@ -9,7 +6,6 @@ struct ForwardModel{P_1, P_2}
     max_intensity :: Float64
 end
 
-""" A single point source (localized fluorophore). """
 struct PointSource
     intensity :: Float64
     x :: Float64
@@ -38,7 +34,6 @@ ForwardModel(sigma, (w1,w2), (n1, n2), mini, maxi) =
 @inline (p :: ForwardModel)(s :: PointSource) =
     s.intensity*p.psf_1(s.x)*p.psf_2(s.y)'
 
-""" Render multiple point sources."""
 function (p :: ForwardModel{P_1, P_2})(sources :: Vector{PointSource}) where {P_1, P_2}
     r = @SMatrix zeros(P_1-1,P_2-1)
     for s in sources

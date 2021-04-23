@@ -4,9 +4,6 @@
 const MAX_STATIC_K = 15
 const MAX_NEWTON_K = 5
 
-
-""" Wrapper around a small static array representing the loss function
-x -> sum(abs2, x-y)."""
 struct SquaredLoss{P_1, P_2, T}
     y :: SMatrix{P_1,P_2,Float64,T}
 end
@@ -26,16 +23,14 @@ end
 PatchLocalizer(model :: ForwardModel) = PatchLocalizer(LMO(model), model)
 
 """
-    (p :: PatchLocalizer)(target :: SMatrix, max_iters :: Int64, min_gap :: Float64;
-        sources :: Vector{PointSource} = PointSource[], max_score :: Float64 = Inf)
+    (p :: PatchLocalizer)(target :: SMatrix, max_iters :: Int64, min_gap :: Float64; sources :: Vector{PointSource} = PointSource[], max_score :: Float64 = Inf)
 
-    Estimate the number and locations of point sources within the small image-patch `target`.
+    Estimate the number (up to a maximum of `max_iters`) and locations of point sources within the small image-patch `target`.
+
     `min_gap` is used to control the number of sources: if the drop in the squared loss
     after adding an additional source is less than `min_gap` the previous sources are returned.
 
-    `lmo` is an instance of [`LMO`](#) and is used to estimate single sources.
-
-    For larger images (bigger than, say, 30 by 30) see [`Localizer`](#).
+    For larger images (bigger than, say, 30 by 30) see [`ImageLocalizer`](@ref).
 
 """
 function (p :: PatchLocalizer)(target :: SMatrix, max_iters :: Int64, min_gap :: Float64; sources :: Vector{PointSource} = PointSource[], max_score :: Float64 = Inf)

@@ -6,7 +6,6 @@
 # It then (approximately) solves a greedy set cover problem to place small boxes to cover all of the rough points.
 # Each of those boxes is then processed with ADCG; the resulting points are returned.
 
-""" Localizes point sources in a large image. """
 struct ImageLocalizer{P1, P2, LMO_T}
     patch_localizer :: PatchLocalizer{LMO_T, ForwardModel{P1, P2}}
     prop_min_intensity :: Float64
@@ -14,12 +13,26 @@ struct ImageLocalizer{P1, P2, LMO_T}
     adcg_max_iters :: Int64
 end
 
+"""
+    ImageLocalizer(σ, adcg_min_gap, adcg_max_iters = 20, P1 = 16, P2 = 16)
+
+   Used to estimate the number and locations of point sources within large images.
+
+   `σ` is the width of the PSF (in pixels).
+
+    `adcg_min_gap` is used to control the number of sources: if the drop in the squared loss
+    after adding an additional source is less than `adcg_min_gap` the previous sources are returned.
+
+    Uses a [`PatchLocalizer`](@ref) to localize within small `P1` x `P2` pixel patches.
+
+"""
 function ImageLocalizer(σ, adcg_min_gap, adcg_max_iters = 20, P1 = 16, P2 = 16)
     @assert P1 == P2
     @assert iseven(P1)
     model = ForwardModel(σ, (float(P1-1), float(P2-1)), (P1-1, P2-1), 0.0, Inf)
     ImageLocalizer(PatchLocalizer(model), adcg_min_gap, adcg_max_iters)
 end
+
 
 function ImageLocalizer(patch_localizer :: PatchLocalizer{LMO_T, ForwardModel{P1, P2}}, adcg_min_gap, adcg_max_iters = 20) where {P1, P2, LMO_T}
     @assert P1 == P2
